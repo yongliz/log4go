@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"regexp"
 	"strings"
 )
 
@@ -42,29 +41,33 @@ func FormatLogRecord(format string, rec *LogRecord) string {
 		return ""
 	}
 
+	// fmt.Println(rec.Created.Format("15:04:05.999999999"))
+	// fmt.Println(rec.Created.Nanosecond() / 1000000)
+
 	out := bytes.NewBuffer(make([]byte, 0, 64))
 	secs := rec.Created.UnixNano() / 1e9
+	// unixNano := rec.Created.UnixNano()
 
 	cache := *formatCache
-	if cache.LastUpdateSeconds != secs {
-		month, day, year := rec.Created.Month(), rec.Created.Day(), rec.Created.Year()
-		hour, minute, second := rec.Created.Hour(), rec.Created.Minute(), rec.Created.Second()
-		zone, _ := rec.Created.Zone()
-		updated := &formatCacheType{
-			LastUpdateSeconds: secs,
-			shortTime:         fmt.Sprintf("%02d:%02d", hour, minute),
-			shortDate:         fmt.Sprintf("%02d/%02d/%02d", day, month, year%100),
-			longTime:          fmt.Sprintf("%02d:%02d:%02d %s", hour, minute, second, zone),
-			longDate:          fmt.Sprintf("%04d/%02d/%02d", year, month, day),
-		}
-		cache = *updated
-		formatCache = updated
-
+	// if cache.LastUpdateSeconds != unixNano {
+	month, day, year := rec.Created.Month(), rec.Created.Day(), rec.Created.Year()
+	hour, minute, second, msecond := rec.Created.Hour(), rec.Created.Minute(),
+		rec.Created.Second(), (rec.Created.Nanosecond() / 1000000)
+	// zone, _ := rec.Created.Zone()
+	updated := &formatCacheType{
+		LastUpdateSeconds: secs,
+		shortTime:         fmt.Sprintf("%02d:%02d", hour, minute),
+		shortDate:         fmt.Sprintf("%02d/%02d/%02d", day, month, year%100),
+		// longTime:          fmt.Sprintf("%02d:%02d:%02d.%d %s", hour, minute, second, msecond, zone),
+		longTime: fmt.Sprintf("%02d:%02d:%02d.%03d", hour, minute, second, msecond),
+		longDate: fmt.Sprintf("%04d/%02d/%02d", year, month, day),
 	}
-	//custom format datetime pattern %D{2006-01-02T15:04:05}
-	formatByte := changeDttmFormat(format, rec)
+	cache = *updated
+	formatCache = updated
+	// }
+
 	// Split the string into pieces by % signs
-	pieces := bytes.Split(formatByte, []byte{'%'})
+	pieces := bytes.Split([]byte(format), []byte{'%'})
 
 	// Iterate over the pieces, replacing known formats
 	for i, piece := range pieces {
@@ -131,22 +134,4 @@ func (w FormatLogWriter) LogWrite(rec *LogRecord) {
 // send log messages to this logger after a Close have undefined behavior.
 func (w FormatLogWriter) Close() {
 	close(w)
-}
-
-func changeDttmFormat(format string, rec *LogRecord) []byte {
-	formatByte := []byte(format)
-	r := regexp.MustCompile("\\%D\\{(.*?)\\}")
-	i := 0
-	formatByte = r.ReplaceAllFunc(formatByte, func(s []byte) []byte {
-		if i < 2 {
-			i++
-			str := string(s)
-			str = strings.Replace(str, "%D", "", -1)
-			str = strings.Replace(str, "{", "", -1)
-			str = strings.Replace(str, "}", "", -1)
-			return []byte(rec.Created.Format(str))
-		}
-		return s
-	})
-	return formatByte
 }
